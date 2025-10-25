@@ -84,11 +84,6 @@ local defaults = {
         [10230] = "mage_freeze_mofo.wav",     -- Rank 4
 		
     },
-	
-		nameSounds
-	for spellid soundfile in pairs spellSounds then	
-	nameSounds GetSpellInfo spellid - soundfile
-end
 
     -- Flat file list used by dropdowns; keep tier folders on disk
     availableSounds = {
@@ -565,7 +560,6 @@ SlashCmdList.SOUNDEVENTS = function(msg)
             else
                 Settings.OpenToCategory(ADDON_NAME)
             end
-      
         else
             print("SoundEvents: Options panel could not be opened.")
         end
