@@ -560,9 +560,6 @@ SlashCmdList.SOUNDEVENTS = function(msg)
             else
                 Settings.OpenToCategory(ADDON_NAME)
             end
-        elseif InterfaceOptionsFrame_OpenToCategory then
-            InterfaceOptionsFrame_OpenToCategory(_G.SoundEventsCategory or ADDON_NAME)
-            InterfaceOptionsFrame_OpenToCategory(_G.SoundEventsCategory or ADDON_NAME)
         else
             print("SoundEvents: Options panel could not be opened.")
         end
