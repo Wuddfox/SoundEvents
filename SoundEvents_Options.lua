@@ -162,20 +162,29 @@ volumeDD:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -28)
 lastAnchor = volumeDD
 
 --------------------------------------------------------------
--- Jump Sound Toggle + Dropdown
+-- Jump + Mount + Clearcasting (aligned and correctly spaced)
 --------------------------------------------------------------
-local jumpCB = CreateCheckbox(scrollChild, "SE_JumpCB", "Enable Jump Sound", nil,
+
+-- Container for Jump + Mount pair
+local topRow = CreateFrame("Frame", nil, scrollChild)
+topRow:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -28)
+topRow:SetWidth(600)
+topRow:SetHeight(100)
+
+--------------------------------------------------------------
+-- Jump (left column)
+--------------------------------------------------------------
+local jumpCB = CreateCheckbox(topRow, "SE_JumpCB", "Enable Jump Sound", nil,
     function() return SoundEventsDB and SoundEventsDB.enableJump end,
     function(val)
         SoundEventsDB.enableJump = val
         print("|cff33ff99SoundEvents:|r Jump sound", val and "|cff00ff00enabled|r." or "|cffff0000disabled|r.")
     end
 )
-jumpCB:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -20)
-lastAnchor = jumpCB
+jumpCB:SetPoint("TOPLEFT", 0, -4)
 
 local jumpDD = CreateDropdown(
-    scrollChild, "SE_JumpDD", "Jump Sound",
+    topRow, "SE_JumpDD", "Jump Sound",
     function() return SoundEventsDB and SoundEventsDB.jumpSound end,
     function(v)
         SoundEventsDB.jumpSound = v
@@ -183,24 +192,24 @@ local jumpDD = CreateDropdown(
     end,
     function() return (SoundEventsDB and SoundEventsDB.availableSounds) or {} end
 )
-jumpDD:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -28)
-lastAnchor = jumpDD
+jumpDD:SetPoint("TOPLEFT", jumpCB, "BOTTOMLEFT", -12, -14)
+jumpDD:SetWidth(220)
+UIDropDownMenu_SetWidth(jumpDD, 220)
 
 --------------------------------------------------------------
--- Mount Sound Toggle + Dropdown
+-- Mount (right column)
 --------------------------------------------------------------
-local mountCB = CreateCheckbox(scrollChild, "SE_MountCB", "Enable Mount Sound", nil,
+local mountCB = CreateCheckbox(topRow, "SE_MountCB", "Enable Mount Sound", nil,
     function() return SoundEventsDB and SoundEventsDB.enableMount end,
     function(val)
         SoundEventsDB.enableMount = val
         print("|cff33ff99SoundEvents:|r Mount sound", val and "|cff00ff00enabled|r." or "|cffff0000disabled|r.")
     end
 )
-mountCB:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -20)
-lastAnchor = mountCB
+mountCB:SetPoint("TOPLEFT", jumpCB, "TOPLEFT", 260, 0) -- moved closer to Jump
 
 local mountDD = CreateDropdown(
-    scrollChild, "SE_MountDD", "Mount Sound",
+    topRow, "SE_MountDD", "Mount Sound",
     function() return SoundEventsDB and SoundEventsDB.mountSound end,
     function(v)
         SoundEventsDB.mountSound = v
@@ -208,23 +217,46 @@ local mountDD = CreateDropdown(
     end,
     function() return (SoundEventsDB and SoundEventsDB.availableSounds) or {} end
 )
-mountDD:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -24)
-lastAnchor = mountDD
-
+mountDD:SetPoint("TOPLEFT", mountCB, "BOTTOMLEFT", -12, -14)
+mountDD:SetWidth(220)
+UIDropDownMenu_SetWidth(mountDD, 220)
 
 --------------------------------------------------------------
--- Section divider (below Mount dropdown)
+-- Clearcasting (below both)
+--------------------------------------------------------------
+local clearcastCB = CreateCheckbox(scrollChild, "SE_ClearcastCB", "Enable Clearcasting Sound", nil,
+    function() return SoundEventsDB and (SoundEventsDB.enableClearcasting ~= false) end,
+    function(val)
+        SoundEventsDB.enableClearcasting = val
+        print("|cff33ff99SoundEvents:|r Clearcasting sound", val and "|cff00ff00enabled|r." or "|cffff0000disabled|r.")
+    end
+)
+clearcastCB:SetPoint("TOPLEFT", topRow, "BOTTOMLEFT", 0, -8)
+
+local clearcastDD = CreateDropdown(
+    scrollChild, "SE_ClearcastDD", "Clearcasting Sound",
+    function() return SoundEventsDB and SoundEventsDB.clearcastingSound end,
+    function(v)
+        SoundEventsDB.clearcastingSound = v
+        print("|cff33ff99SoundEvents:|r Clearcasting sound set to |cffffff00" .. v .. "|r.")
+    end,
+    function() return (SoundEventsDB and SoundEventsDB.availableSounds) or {} end
+)
+clearcastDD:SetPoint("TOPLEFT", clearcastCB, "BOTTOMLEFT", -12, -14)
+clearcastDD:SetWidth(220)
+UIDropDownMenu_SetWidth(clearcastDD, 220)
+
+lastAnchor = clearcastDD
+
+--------------------------------------------------------------
+-- Single section divider (below Clearcasting)
 --------------------------------------------------------------
 local divider = scrollChild:CreateTexture(nil, "ARTWORK")
 divider:SetColorTexture(0.5, 0.5, 0.5, 0.4)
-
--- Anchor directly under the Mount dropdown, with spacing
-divider:SetPoint("TOPLEFT", mountDD, "BOTTOMLEFT", 0, -20)
+divider:SetPoint("TOPLEFT", lastAnchor, "BOTTOMLEFT", 0, -30)
 divider:SetPoint("RIGHT", -40, 0)
 divider:SetHeight(1)
-
 lastAnchor = divider
-
 
 --------------------------------------------------------------
 -- Spell Sound Mapper
@@ -277,7 +309,8 @@ local spellDD = CreateDropdown(
 )
 
 spellDD:SetPoint("TOPLEFT", spellInput, "TOPRIGHT", 10, -2)
-
+spellDD:SetWidth(220)
+UIDropDownMenu_SetWidth(spellDD, 220)
 -- Buttons
 local addButton = CreateFrame("Button", "SE_AddSpell", scrollChild, "UIPanelButtonTemplate")
 addButton:SetText("Add / Update")
@@ -343,72 +376,76 @@ function UpdateSpellList()
 
 
     -- ✅ Grouped display by sound filename prefix
-local groups = {
-    warrior = {},
-    mage    = {},
-    misc    = {},
-}
+    --------------------------------------------------------------
+    --  Group entries by prefix and sort alphabetically per group
+    --------------------------------------------------------------
+    local groups = {
+        warrior = {},
+        mage    = {},
+        misc    = {},
+    }
 
-for id, sound in pairs(SoundEventsDB.spellSounds) do
-    local name = GetSpellInfo(id) or ("#" .. id)
-    if type(sound) == "string" then
-        if sound:find("^warrior_") then
-            table.insert(groups.warrior, { id = id, name = name, sound = sound })
-        elseif sound:find("^mage_") then
-            table.insert(groups.mage, { id = id, name = name, sound = sound })
-        else
-            table.insert(groups.misc, { id = id, name = name, sound = sound })
+    for id, sound in pairs(SoundEventsDB.spellSounds or {}) do
+        local name = GetSpellInfo(id) or ("#" .. id)
+        if type(sound) == "string" then
+            if sound:find("^warrior_") then
+                table.insert(groups.warrior, { id = id, name = name, sound = sound })
+            elseif sound:find("^mage_") then
+                table.insert(groups.mage, { id = id, name = name, sound = sound })
+            else
+                table.insert(groups.misc, { id = id, name = name, sound = sound })
+            end
         end
     end
-end
 
-for _, list in pairs(groups) do
-    table.sort(list, function(a,b) return a.name < b.name end)
-end
+    -- 🔤 Sort each group alphabetically by spell name
+    for _, tbl in pairs(groups) do
+        table.sort(tbl, function(a, b)
+            return a.name:lower() < b.name:lower()
+        end)
+    end
 
-local y = 0
-local function addHeader(text)
-    local hdr = listContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    hdr:SetPoint("TOPLEFT", 0, -y)
-    hdr:SetText("|cffFFD700—— " .. text .. " ——|r")
-    table.insert(mappingLines, hdr)
-    y = y + 18
-end
+    --------------------------------------------------------------
+    --  Render each section with its own header
+    --------------------------------------------------------------
+    local function RenderGroup(header, tbl, startY)
+        if #tbl == 0 then return startY end
 
-local function addEntry(entry)
-    local line = listContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    line:SetPoint("TOPLEFT", 0, -y)
-    line:SetText(string.format("• |cff00ffff%s|r  |cffffff00%s|r", entry.name, entry.sound))
-    table.insert(mappingLines, line)
-    y = y + 16
+        local headerFS = listContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        headerFS:SetPoint("TOPLEFT", 0, -startY)
+        headerFS:SetText(header)
+        table.insert(mappingLines, headerFS)
 
-    local btn = CreateFrame("Button", nil, listContainer)
-    btn:SetPoint("TOPLEFT", line, "TOPLEFT", -2, 2)
-    btn:SetPoint("BOTTOMRIGHT", line, "BOTTOMRIGHT", 2, -2)
-    btn:SetScript("OnClick", function()
-        spellInput:SetText(entry.name)
-        UIDropDownMenu_SetSelectedValue(spellDD, entry.sound)
-        UIDropDownMenu_SetText(spellDD, entry.sound)
-    end)
-    table.insert(mappingLines, btn)
-end
+        startY = startY + 18
+        for _, e in ipairs(tbl) do
+            local line = listContainer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            line:SetPoint("TOPLEFT", 10, -startY)
+            line:SetText(string.format("• |cff00ffff%s|r  |cffffff00%s|r", e.name, e.sound))
+            table.insert(mappingLines, line)
 
-if #groups.warrior > 0 then
-    addHeader("Warrior")
-    for _, e in ipairs(groups.warrior) do addEntry(e) end
-    y = y + 8
-end
-if #groups.mage > 0 then
-    addHeader("Mage")
-    for _, e in ipairs(groups.mage) do addEntry(e) end
-    y = y + 8
-end
-if #groups.misc > 0 then
-    addHeader("Misc")
-    for _, e in ipairs(groups.misc) do addEntry(e) end
-end
+            local btn = CreateFrame("Button", nil, listContainer)
+            btn:SetPoint("TOPLEFT", line, "TOPLEFT", -2, 2)
+            btn:SetPoint("BOTTOMRIGHT", line, "BOTTOMRIGHT", 2, -2)
+            btn:SetScript("OnClick", function()
+                spellInput:SetText(e.name)
+                UIDropDownMenu_SetSelectedValue(spellDD, e.sound)
+                UIDropDownMenu_SetText(spellDD, e.sound)
+            end)
+            table.insert(mappingLines, btn)
 
-listContainer:SetHeight(math.max(1, y))
+            startY = startY + 16
+        end
+        return startY + 10
+    end
+
+    local y = 0
+    y = RenderGroup("Warrior Abilities", groups.warrior, y)
+    y = RenderGroup("Mage Abilities", groups.mage, y)
+    y = RenderGroup("Miscellaneous", groups.misc, y)
+
+    listContainer:SetHeight(math.max(1, y))
+
+
 
 end
 
@@ -423,12 +460,15 @@ addButton:SetScript("OnClick", function()
     if not SoundEventsDB then return end
     SoundEventsDB.spellSounds = SoundEventsDB.spellSounds or {}
 
+    ----------------------------------------------------------
+    -- 🧩 Clean and validate input
+    ----------------------------------------------------------
     local raw = spellInput:GetText() or ""
     local spell = raw
         :gsub("|c%x%x%x%x%x%x%x%x", "")  -- remove color codes
         :gsub("|r", "")
         :gsub("[%[%]]", "")               -- remove brackets
-        :match("^%s*(.-)%s*$")            -- trim
+        :match("^%s*(.-)%s*$")            -- trim spaces
 
     local sound = UIDropDownMenu_GetSelectedValue(spellDD)
     if not spell or spell == "" then
@@ -440,39 +480,85 @@ addButton:SetScript("OnClick", function()
         return
     end
 
-    
+    ----------------------------------------------------------
+    -- 🌍 Resolve spell info
+    ----------------------------------------------------------
+    local spellName, _, _, _, _, _, baseId = GetSpellInfo(spell)
+    if not spellName then
+        print("SoundEvents: Unknown spell – check the name.")
+        return
+    end
 
-    local id = select(7, GetSpellInfo(spell))
-if not id then
-    print("SoundEvents: unknown spell – check the name.")
-    return
-end
-SoundEventsDB.spellSounds[id] = sound
-print("SoundEvents: mapped", GetSpellInfo(id) or ("#" .. id), "-", sound)
+    ----------------------------------------------------------
+    -- 💾 Save both numeric ID and name-based mapping
+    ----------------------------------------------------------
+    local keyNumeric = baseId
+    local keyName = spellName:lower()
 
+    if keyNumeric then
+        SoundEventsDB.spellSounds[keyNumeric] = sound
+    end
+    SoundEventsDB.spellSounds[keyName] = sound
+
+    ----------------------------------------------------------
+    -- 🧠 Feedback
+    ----------------------------------------------------------
+    print(string.format(
+        "|cff33ff99SoundEvents:|r Mapped %s → %s%s",
+        spellName,
+        sound,
+        keyNumeric and ("  (ID " .. keyNumeric .. " + name '" .. keyName .. "')") or ""
+    ))
+
+    ----------------------------------------------------------
+    -- 🧹 Refresh UI
+    ----------------------------------------------------------
     spellInput:SetText("")
     UIDropDownMenu_SetText(spellDD, "")
     UpdateSpellList()
 end)
 
--- ✅ Remove
+
+
+
+----------------------------------------------------------
+-- ✅ Remove mapping (numeric + name-safe)
+----------------------------------------------------------
 removeButton:SetScript("OnClick", function()
     if not SoundEventsDB or not SoundEventsDB.spellSounds then return end
+
     local raw = spellInput:GetText() or ""
-    local id = select(7, GetSpellInfo(raw))
-    if not id then
-        print("SoundEvents: unknown spell name.")
+    if raw == "" then
+        print("SoundEvents: please enter a spell name to remove.")
         return
     end
-    if SoundEventsDB.spellSounds[id] then
-        SoundEventsDB.spellSounds[id] = nil
-        print("SoundEvents: removed mapping for", GetSpellInfo(id) or ("#" .. id))
-        spellInput:SetText("")
-        UIDropDownMenu_SetText(spellDD, "")
-        UpdateSpellList()
-    else
+
+    -- Normalize: try to get numeric ID and lowercase name
+    local _, _, _, _, _, _, baseId = GetSpellInfo(raw)
+    local keyName = raw:lower()
+    local removed = false
+
+    -- Remove numeric key if found
+    if baseId and SoundEventsDB.spellSounds[baseId] then
+        SoundEventsDB.spellSounds[baseId] = nil
+        removed = true
+        print("SoundEvents: removed mapping for", GetSpellInfo(baseId) or ("#" .. baseId))
+    end
+
+    -- Remove string key if found
+    if SoundEventsDB.spellSounds[keyName] then
+        SoundEventsDB.spellSounds[keyName] = nil
+        removed = true
+        print("SoundEvents: removed mapping for", keyName)
+    end
+
+    if not removed then
         print("SoundEvents: no mapping found for", raw)
     end
+
+    spellInput:SetText("")
+    UIDropDownMenu_SetText(spellDD, "")
+    UpdateSpellList()
 end)
 
 
