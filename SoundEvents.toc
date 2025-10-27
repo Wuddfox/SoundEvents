@@ -2,7 +2,7 @@
 ## Title: SoundEvents
 ## Notes: Play custom sounds on jump, mount, and chosen spell casts. Includes replace mode for silent overrides.
 ## Author: Halfdays
-## Version: 1.8
+## Version: 1.8.5
 ## SavedVariables: SoundEventsDB
 
 SoundEvents.lua

@@ -34,8 +34,11 @@ local defaults = {
     jumpSound  = "boing.wav",
     mountSound = "lookatmyhorse.wav",
     clearcastingSound = "clearcasting.wav",
-
+	
     spellSounds = {
+	
+		--misc
+		[7744]  = "wotf.ogg", --will of the forsaken
         -- Warrior
         [25289] = "warrior_battleshout.wav",
         [18499] = "warrior_berserker.wav",
@@ -56,7 +59,7 @@ local defaults = {
         [12328] = "warrior_deathwish.ogg",
 
         -- Mage
-        [1953]  = "mage_surprise_mofo.wav",
+        [1953]  = "surprise_mofo.wav",
         [12051] = "mage_mana.wav",
         [11366] = "mage_pyroblast.wav",
         [10199] = "mage_fire_blast.wav",
@@ -74,20 +77,36 @@ local defaults = {
         [11417] = "mage_mr_worldwide.ogg",
         [11420] = "mage_mr_worldwide.ogg",
         [11418] = "mage_mr_worldwide.ogg",
+		
+		-- Rogue
+		[13750] = "rogue_adrenaline.ogg",
+		[13877] = "rogue_flurry.ogg",
+		[25300] = "rogue_backstab.ogg",
+		[1857]  = "rogue_vanish.ogg",
+		[11305] = "rogue_sprint2.ogg",
+		[11198] = "rogue_feint.ogg",
+		[5277]  = "rogue_evasion.ogg",
+		[1725]  = "rogue_distract.ogg",
+		[1842]  = "rogue_disarmtrap.ogg",
+		[11269] = "rogue_ambush.ogg",
+		[1833]  = "surprise_mofo",
+		
+		
     },
 
     availableSounds = {
-        "bam.ogg","boing.wav","off.wav","mariojump.wav","lookatmyhorse.wav","laugh.ogg",
+        "wotf.ogg","bam.ogg","boing.wav","off.wav","mariojump.wav","lookatmyhorse.wav","laugh.ogg","surprise_mofo.wav",
         "warrior_battleshout.wav","warrior_berserker.wav","warrior_bitch.wav",
         "warrior_cleave.wav","warrior_demoral.wav","warrior_execute.wav",
         "warrior_fear.wav","warrior_intercepted.wav","warrior_leroyjenkins.wav",
         "warrior_spin.wav","warrior_theyforgot.wav","warrior_bonjour.wav",
         "warrior_you_shal_not_pass.ogg","warrior_your_mother.ogg","warrior_deathwish.ogg",
-        "mage_freeze_mofo.wav","mage_mana.wav","mage_sheep.wav",
-        "mage_surprise_mofo.wav","mage_pyroblast.wav","mage_fire_blast.wav",
+        "mage_freeze_mofo.wav","mage_mana.wav","mage_sheep.wav","mage_pyroblast.wav","mage_fire_blast.wav",
         "mage_blast_wave.wav","mage_blizzard.wav","mage_flamestrike.wav",
         "mage_scorch.wav","mage_9000.ogg","mage_mr_worldwide.ogg","mage_expelliarmus.ogg",
-        "mage_another_one.ogg",
+        "mage_another_one.ogg","rogue_adrenaline.ogg","rogue_flurry.ogg","rogue_backstab.ogg","rogue_vanish.ogg",
+		"rogue_backstab2.ogg","rogue_sprint2.ogg","rogue_sprint1.ogg","rogue_feint.ogg","rogue_evasion.ogg",
+		"rogue_evasion2.ogg","rogue_distract.ogg","rogue_disarmtrap.ogg","rogue_ambush.ogg",
     },
 }
 
@@ -161,38 +180,56 @@ local f = CreateFrame("Frame")
 local wasMounted = IsMounted()
 
 --------------------------------------------------------------
--- Robust resolver (Classic-safe)
+-- ResolveSoundForSpell
+-- Determines which sound file should play for a given spellID.
+-- Handles rank variants, localization differences, and missing base IDs.
 --------------------------------------------------------------
 local function ResolveSoundForSpell(spellID)
+    -- ✅ Grab database reference safely
     local db = _G.SoundEventsDB
     if not db or not db.spellSounds then return nil end
 
+    ----------------------------------------------------------
+    -- 🎯 Gather spell info (localized name + base ID)
+    ----------------------------------------------------------
     local name = GetSpellInfo(spellID)
     local nameKey = name and name:lower() or nil
-    local baseId = select(7, GetSpellInfo(spellID))
-    if baseId == spellID then baseId = nil end
 
-    -- 1) try baseId
+    -- Get the base spell family ID, or fallback for orphan spells (e.g. Feint)
+    local baseId = select(7, GetSpellInfo(spellID))
+    if not baseId or baseId == spellID then
+        baseId = spellID  -- fallback for spells with no shared family
+    end
+
+    ----------------------------------------------------------
+    -- 🧩 Resolution priority (4-tier lookup)
+    ----------------------------------------------------------
+
+    -- 1️⃣ Try baseId first (covers all ranks of a spell family)
     if baseId and db.spellSounds[baseId] then
         return db.spellSounds[baseId], "baseId", baseId
     end
-    -- 2) try exact spellID
+
+    -- 2️⃣ Try exact spellID (rank-specific match)
     if db.spellSounds[spellID] then
         return db.spellSounds[spellID], "spellID", spellID
     end
-    -- 3) try lowercase name
+
+    -- 3️⃣ Try lowercase name key (language-agnostic fallback)
     if nameKey and db.spellSounds[nameKey] then
-        -- cache this rank ID for future speed
+        -- Cache this numeric rank for faster future lookups
         db.spellSounds[spellID] = db.spellSounds[nameKey]
         return db.spellSounds[nameKey], "name", nameKey
     end
-    -- 4) last resort: scan defaults by name and cache
+
+    -- 4️⃣ Last resort: scan default table for matching names
+    -- (used if a mapping exists in defaults but not yet saved in DB)
     if nameKey then
         for id, snd in pairs(defaults.spellSounds) do
             if type(id) == "number" then
                 local nm = GetSpellInfo(id)
                 if nm and nm:lower() == nameKey then
-                    -- write both name alias and this rank ID into DB
+                    -- Cache both the name alias and rank ID for persistence
                     db.spellSounds[nameKey] = snd
                     db.spellSounds[spellID] = snd
                     return snd, "defaults-scan", id
@@ -200,6 +237,10 @@ local function ResolveSoundForSpell(spellID)
             end
         end
     end
+
+    ----------------------------------------------------------
+    -- ❌ No match found (for debug readability)
+    ----------------------------------------------------------
     return nil, "none", nil
 end
 
@@ -340,7 +381,7 @@ local function CheckClearcasting()
         if id ~= lastCCSpell or expire ~= lastCCExpire then
             lastCCSpell, lastCCExpire = id, expire
             if SoundEventsDB.enableClearcasting ~= false then
-                PlayStrategy(SoundEventsDB.clearcastingSound or "clearcasting.wav")
+                PlayStrategy(SoundEventsDB.clearcastingSound or "mage_another_one.ogg")
                 dprint("🎵 Clearcasting triggered (" .. id .. ")")
             end
         end
