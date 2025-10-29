@@ -10,6 +10,27 @@ local ADDON_NAME = ...
 SoundEventsDB = SoundEventsDB or {}
 
 --------------------------------------------------------------
+-- Localized globals (performance + clarity)
+--------------------------------------------------------------
+local GetSpellInfo = GetSpellInfo
+local PlaySoundFile = PlaySoundFile
+local IsMounted = IsMounted
+local GetTime = GetTime
+local StopAllSounds = StopAllSounds
+local GetCVar = GetCVar
+local SetCVar = SetCVar
+local C_Timer = C_Timer
+local UnitBuff = UnitBuff
+local CreateFrame = CreateFrame
+local hooksecurefunc = hooksecurefunc
+local print = print
+local tostring = tostring
+local tonumber = tonumber
+local pairs = pairs
+local type = type
+local string_format = string.format
+
+--------------------------------------------------------------
 -- Paths (tiered)
 --------------------------------------------------------------
 local BASE_SOUND_PATH = "Interface\\AddOns\\SoundEvents\\Sounds\\"
@@ -89,7 +110,7 @@ local defaults = {
 		[1725]  = "rogue_distract.ogg",
 		[1842]  = "rogue_disarmtrap.ogg",
 		[11269] = "rogue_ambush.ogg",
-		[1833]  = "surprise_mofo",
+		[1833]  = "surprise_mofo.wav", -- fixed missing extension
 		
 		
     },
@@ -139,22 +160,43 @@ end
 --------------------------------------------------------------
 local function PlaySESound(filename)
     if not filename or filename == "" then return end
-    PlaySoundFile(GetSoundPath() .. filename, "Master")
-    dprint("Played:", filename)
+    local path = GetSoundPath() .. filename
+    local ok, err = pcall(PlaySoundFile, path, "Master")
+    if not ok then
+        dprint("PlaySoundFile error for", filename, "->", err)
+    else
+        dprint("Played:", filename)
+    end
 end
 
 local function PlayStrategy(filename)
-    if not filename or filename == "" or SoundEventsDB.masterEnable == false then return end
-    if SoundEventsDB.replaceMode then StopAllSounds() end
-    if SoundEventsDB.layerWithOriginal then
+    if not filename or filename == "" then return end
+    -- masterEnable check
+    if SoundEventsDB and SoundEventsDB.masterEnable == false then return end
+
+    if SoundEventsDB and SoundEventsDB.replaceMode then
+        pcall(StopAllSounds)
+    end
+
+    if SoundEventsDB and SoundEventsDB.layerWithOriginal then
         PlaySESound(filename)
     else
         local old = GetCVar("Sound_EnableSFX")
-        SetCVar("Sound_EnableSFX", 0)
+        old = tonumber(old) or 1
+        -- temporarily mute SFX, play our sound, then restore
+        local ok, err = pcall(SetCVar, "Sound_EnableSFX", 0)
+        if not ok then
+            dprint("SetCVar mute failed:", err)
+            -- fallback: still attempt to play
+            PlaySESound(filename)
+            return
+        end
         C_Timer.After(0.05, function()
             PlaySESound(filename)
+            -- ensure restore even if something errors while playing
             C_Timer.After(0.25, function()
-                SetCVar("Sound_EnableSFX", old or 1)
+                local ok2, err2 = pcall(SetCVar, "Sound_EnableSFX", tostring(old))
+                if not ok2 then dprint("Failed to restore SFX CVar:", err2) end
             end)
         end)
     end
@@ -165,7 +207,7 @@ end
 --------------------------------------------------------------
 local lastJump = 0
 hooksecurefunc("JumpOrAscendStart", function()
-    if SoundEventsDB.enableJump == false then return end
+    if not SoundEventsDB or SoundEventsDB.enableJump == false then return end
     local now = GetTime()
     if now - lastJump > 0.25 then
         lastJump = now
@@ -177,7 +219,7 @@ end)
 -- Event frame (mount + spellcast)
 --------------------------------------------------------------
 local f = CreateFrame("Frame")
-local wasMounted = IsMounted()
+local wasMounted -- will be set at initialization (after login)
 
 --------------------------------------------------------------
 -- ResolveSoundForSpell
@@ -185,13 +227,11 @@ local wasMounted = IsMounted()
 -- Handles rank variants, localization differences, and missing base IDs.
 --------------------------------------------------------------
 local function ResolveSoundForSpell(spellID)
-    -- ✅ Grab database reference safely
+    -- Grab DB reference safely
     local db = _G.SoundEventsDB
-    if not db or not db.spellSounds then return nil end
+    if not db or not db.spellSounds then return nil, "none", nil end
 
-    ----------------------------------------------------------
-    -- 🎯 Gather spell info (localized name + base ID)
-    ----------------------------------------------------------
+    -- Gather spell info (localized name + base ID)
     local name = GetSpellInfo(spellID)
     local nameKey = name and name:lower() or nil
 
@@ -201,28 +241,24 @@ local function ResolveSoundForSpell(spellID)
         baseId = spellID  -- fallback for spells with no shared family
     end
 
-    ----------------------------------------------------------
-    -- 🧩 Resolution priority (4-tier lookup)
-    ----------------------------------------------------------
-
-    -- 1️⃣ Try baseId first (covers all ranks of a spell family)
+    -- 1) Try baseId first (covers all ranks of a spell family)
     if baseId and db.spellSounds[baseId] then
         return db.spellSounds[baseId], "baseId", baseId
     end
 
-    -- 2️⃣ Try exact spellID (rank-specific match)
+    -- 2) Try exact spellID (rank-specific match)
     if db.spellSounds[spellID] then
         return db.spellSounds[spellID], "spellID", spellID
     end
 
-    -- 3️⃣ Try lowercase name key (language-agnostic fallback)
+    -- 3) Try lowercase name key (language-agnostic fallback)
     if nameKey and db.spellSounds[nameKey] then
         -- Cache this numeric rank for faster future lookups
         db.spellSounds[spellID] = db.spellSounds[nameKey]
         return db.spellSounds[nameKey], "name", nameKey
     end
 
-    -- 4️⃣ Last resort: scan default table for matching names
+    -- 4) Last resort: scan default table for matching names
     -- (used if a mapping exists in defaults but not yet saved in DB)
     if nameKey then
         for id, snd in pairs(defaults.spellSounds) do
@@ -238,9 +274,7 @@ local function ResolveSoundForSpell(spellID)
         end
     end
 
-    ----------------------------------------------------------
-    -- ❌ No match found (for debug readability)
-    ----------------------------------------------------------
+    -- No match found
     return nil, "none", nil
 end
 
@@ -251,8 +285,8 @@ f:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
         local mounted = IsMounted()
         if mounted and not wasMounted then
-            if SoundEventsDB.enableMount ~= false then
-                PlayStrategy(SoundEventsDB.mountSound)
+            if SoundEventsDB == nil or SoundEventsDB.enableMount ~= false then
+                PlayStrategy(SoundEventsDB and SoundEventsDB.mountSound or defaults.mountSound)
             end
         end
         wasMounted = mounted
@@ -287,8 +321,8 @@ end)
 --------------------------------------------------------------
 local function SoundEvents_Initialize()
     SoundEventsDB = copyDefaults(defaults, SoundEventsDB or {})
-	_G.SoundEventsDefaults = defaults                    -- if the options UI reads defaults
-SoundEventsDB.availableSounds = defaults.availableSounds
+    _G.SoundEventsDefaults = defaults                    -- if the options UI reads defaults
+    SoundEventsDB.availableSounds = defaults.availableSounds
 
     -- Add lowercase aliases for Classic ranks (from current DB)
     local added = 0
@@ -305,7 +339,7 @@ SoundEventsDB.availableSounds = defaults.availableSounds
         end
     end
     if added > 0 then
-        print(string.format("|cff33ff99SoundEvents:|r Added %d name-based aliases for Classic ranks.", added))
+        print(string_format("|cff33ff99SoundEvents:|r Added %d name-based aliases for Classic ranks.", added))
     end
 
     -- Also seed aliases from defaults (covers fresh installs)
@@ -323,10 +357,13 @@ SoundEventsDB.availableSounds = defaults.availableSounds
         end
     end
     if seeded > 0 and SoundEventsDB.debug then
-        dprint("Seeded", seeded, "name aliases from defaults.")
+        dprint("Seeded", seeded, "name aliases from defaults.");
     end
 
-    -- ✅ Register events after aliases exist
+    -- capture mounted state now (after login) so it reflects real state
+    wasMounted = IsMounted()
+
+    -- Register events after aliases exist
     f:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
     if f.RegisterUnitEvent then
         f:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
